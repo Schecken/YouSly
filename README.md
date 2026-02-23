@@ -99,6 +99,9 @@ python3 yously.py encode --message "secret text" --key "4f2a9721569ef978" --topi
 python3 yously.py encode --message "secret text" --otp --topic "winter olympics" --discover trending --technique creator --playlist-name "testing123" --no-api
 ```
 
+<img width="1596" height="675" alt="encode-example" src="https://github.com/user-attachments/assets/83a026d3-0ec5-4b2a-8ce0-5a0a81015366" />
+<img width="1306" height="816" alt="encode-example-youtube" src="https://github.com/user-attachments/assets/00759707-3668-4193-8a9e-a17a913e4f18" />
+
 ## Decode
 ### By playlist URL
 ```bash
@@ -114,6 +117,8 @@ python3 yously.py decode --playlist "PL..." --key "<effective_key_from_encode>" 
 ```bash
 python3 yously.py decode --playlist "PL..." --key "<effective_key_from_encode>" --technique creator --no-api
 ```
+
+<img width="806" height="94" alt="decode-example" src="https://github.com/user-attachments/assets/8508d7c9-326b-41f7-bba2-b0cb44e84734" />
 
 # Options
 ## Encode
