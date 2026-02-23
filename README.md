@@ -70,6 +70,7 @@ YOUTUBE_API_KEY = "YOUR_KEY"
 - Google Cloud Console -> **APIs & Services** -> **Credentials**
 - **Create credentials** -> **OAuth client ID**
 - App type: **Desktop app** (recommended)
+- Add `http://localhost:43063/` to the Authorized redirect URIs
 - Download the JSON and save as `client_secret.json` in this project directory
 
 ### 3) Configure OAuth consent screen
