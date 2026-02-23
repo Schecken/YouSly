@@ -1,4 +1,4 @@
-![YouSly Banner](YouSly.png)
+<img width="1280" height="400" alt="YouSly-Banner" src="https://github.com/user-attachments/assets/be0a8dc5-c616-40a1-8ed9-14c0954504d0" />
 
 YouSly is a messaging tool that encodes/decodes messages into YouTube playlists using video metadata (title, creator, or video ID).
 It supports strict positional matching, adaptive key shifts (hex only), and either API or no-API search modes.
@@ -7,7 +7,8 @@ It supports strict positional matching, adaptive key shifts (hex only), and eith
 Dunno, felt like it
 
 # Features
-## Encode & decode messages
+## Encode & decode me
+ssages
 - **Title**: Match characters against video titles
 - **Creator**: Match characters against channel/creator names
 - **Video ID**: Match characters against the 11-char YouTube video ID
