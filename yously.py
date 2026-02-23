@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 """
-Yously: starter YouTube version of Spotisly-style encoding/decoding.
-
 Requirements:
   pip install google-api-python-client google-auth-oauthlib
   # optional no-API mode: pip install yt-dlp
