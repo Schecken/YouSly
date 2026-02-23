@@ -48,6 +48,9 @@ ssages
 pip install google-api-python-client google-auth-oauthlib yt-dlp
 ```
 
+## YouTube account setup
+- User Settings (Top right corner) -> Create channel
+
 ## Google Cloud setup
 - Enable **YouTube Data API v3**
 - Create OAuth client and download `client_secret.json` into project root
