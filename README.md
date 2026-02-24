@@ -56,28 +56,18 @@ pip install google-api-python-client google-auth-oauthlib yt-dlp
 - Create OAuth client and download `client_secret.json` into project root
 - First write action stores auth token in `youtube_token.json`
 
-### 1) Create API key (for search/read API mode)
-- Google Cloud Console -> **APIs & Services** -> **Credentials**
-- **Create credentials** -> **API key**
-- (Optional but recommended) Restrict it to YouTube Data API v3 and your IPs
-
-Set it in `yously.py`:
-```python
-YOUTUBE_API_KEY = "YOUR_KEY"
-```
-
-### 2) Create OAuth client (for playlist write + authenticated operations)
+### 1) Create OAuth client (for playlist write + authenticated operations)
 - Google Cloud Console -> **APIs & Services** -> **Credentials**
 - **Create credentials** -> **OAuth client ID**
 - App type: **Desktop app** (recommended)
 - Add `http://localhost:43063/` to the Authorized redirect URIs
 - Download the JSON and save as `client_secret.json` in this project directory
 
-### 3) Configure OAuth consent screen
+### 2) Configure OAuth consent screen
 - **APIs & Services** -> **OAuth consent screen**
 - If app is in testing, add your Google account under **Test users**
 
-### 4) First auth run
+### 3) First auth run
 - First encode run that writes a playlist (`--playlist-name ...`) will open auth flow
 - Token is saved to `youtube_token.json`
 
