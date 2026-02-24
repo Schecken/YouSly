@@ -28,7 +28,7 @@ from models import PickedVideo
 from opsec.simulator import YouTubeOpSecSimulator
 
 SUPPORTED_CHARS = set(string.ascii_lowercase + string.digits + " ")
-YOUTUBE_API_KEY = "REPLACE_WITH_YOUR_YOUTUBE_API_KEY"
+YOUTUBE_API_KEY = "AIzaSyDF7j-RS5-UNGQuyjYaiYOhkZqnNXkx9cQ"
 YOUTUBE_OAUTH_CLIENT_SECRETS = "client_secret.json"
 YOUTUBE_OAUTH_TOKEN_FILE = "youtube_token.json"
 YOUTUBE_WRITE_SCOPES = ["https://www.googleapis.com/auth/youtube"]
@@ -90,8 +90,20 @@ def merge_effective_positions_into_key(
     merged = parse_key_to_positions(original_key)
     if not merged:
         return positions_to_key(effective_positions)
+
+    seen_by_slot: Dict[int, int] = {}
     for i, pos in enumerate(effective_positions):
-        merged[i % len(merged)] = pos
+        slot = i % len(merged)
+        prior = seen_by_slot.get(slot)
+        if prior is None:
+            seen_by_slot[slot] = pos
+            merged[slot] = pos
+            continue
+        if prior != pos:
+            raise ValueError(
+                f"Conflicting effective key positions for slot {slot}: "
+                f"{prior} vs {pos}. This cannot be represented by a looped key."
+            )
     return positions_to_key(merged)
 
 
@@ -399,6 +411,39 @@ def parse_key_to_positions(key: str) -> List[int]:
         else:
             raise ValueError("Key must contain only hex/digits characters.")
     return positions
+
+
+def format_encode_input_error(message: str) -> str:
+    if "Suggested key change for character" not in message:
+        return f"Input error: {message}"
+
+    step = re.search(r"step (\d+)", message)
+    base_pos = re.search(r"base position (\d+)", message)
+    suggested = re.search(r"use position (\d+)", message)
+    observed = re.search(r"Observed positions: (.+?)\.", message)
+    example = re.search(r"Example video: '(.+)' \(([^)]+)\)\.", message)
+    char_match = re.search(r"character '(.+?)'", message)
+
+    step_text = step.group(1) if step else "?"
+    base_text = base_pos.group(1) if base_pos else "?"
+    suggested_text = suggested.group(1) if suggested else "?"
+    observed_text = observed.group(1) if observed else "(none)"
+    char_text = char_match.group(1) if char_match else "?"
+
+    lines = [
+        "Input error: unable to strictly encode a character after full fallback search.",
+        f"Step: {step_text}",
+        f"Character: {char_text!r}",
+        f"Current key position: {base_text}",
+        f"Suggested key position: {suggested_text}",
+        f"Observed viable positions: {observed_text}",
+    ]
+    if example:
+        lines.append(f"Example candidate: {example.group(1)!r} ({example.group(2)})")
+    lines.append(
+        "Hint: this run supports adaptive slot recomputation; re-run encode and use the printed Effective Key for decode."
+    )
+    return "\n".join(lines)
 
 
 def normalize_message(msg: str) -> str:
@@ -1080,6 +1125,7 @@ def pick_video_for_char(
     used_video_ids_global: Optional[Set[str]] = None,
     results_per_search: int = DEFAULT_RESULTS_PER_SEARCH,
     show_progress: bool = False,
+    allow_key_shift: bool = True,
 ) -> PickedVideo:
     query_target = "_" if (ch == " " and technique == "videoid") else ("-" if ch == " " else ch)
     if technique == "videoid":
@@ -1123,6 +1169,7 @@ def pick_video_for_char(
     observed_counts: Dict[int, int] = {}
     observed_examples: Dict[int, Tuple[str, str]] = {}
     announced_no_match_yet = False
+    key_shift_pools: Dict[int, List[tuple]] = {p: [] for p in pos_candidates[1:]}
 
     def strict_candidates(results: List[dict], query_used: str) -> Dict[int, List[tuple]]:
         pools: Dict[int, List[tuple]] = {p: [] for p in pos_candidates}
@@ -1181,15 +1228,10 @@ def pick_video_for_char(
             continue
 
         strict_pools = strict_candidates(results, query)
-        chosen = None
-        chosen_pos = None
-        for p in pos_candidates:
-            pool = strict_pools.get(p, [])
-            if pool:
-                chosen = random.choice(pool)
-                chosen_pos = p
-                break
-        if chosen and chosen_pos is not None:
+        base_pool = strict_pools.get(pos_candidates[0], [])
+        if base_pool:
+            chosen = random.choice(base_pool)
+            chosen_pos = pos_candidates[0]
             progress_log(
                 show_progress,
                 f"{step_label}Match found at key position {chosen_pos}.",
@@ -1220,6 +1262,10 @@ def pick_video_for_char(
                 match_type=match_type,
                 query_used=chosen[4],
             )
+        for p in pos_candidates[1:]:
+            pool = strict_pools.get(p, [])
+            if pool:
+                key_shift_pools[p].extend(pool)
 
         if page < max_pages_per_query and search_calls < DEFAULT_MAX_SEARCH_CALLS:
             query_pages[query] = page + 1
@@ -1281,15 +1327,10 @@ def pick_video_for_char(
                 topic=topic,
             )
             strict_related_pools = strict_candidates(related, f"related:{seed_vid}")
-            chosen = None
-            chosen_pos = None
-            for p in pos_candidates:
-                pool = strict_related_pools.get(p, [])
-                if pool:
-                    chosen = random.choice(pool)
-                    chosen_pos = p
-                    break
-            if chosen and chosen_pos is not None:
+            base_pool = strict_related_pools.get(pos_candidates[0], [])
+            if base_pool:
+                chosen = random.choice(base_pool)
+                chosen_pos = pos_candidates[0]
                 progress_log(
                     show_progress,
                     f"{step_label}Match found at key position {chosen_pos} via related videos.",
@@ -1311,9 +1352,13 @@ def pick_video_for_char(
                     intended_char=ch,
                     key_pos=chosen[5],
                     extracted_char=chosen[3],
-                    match_type="fallback" if chosen_pos == base_pos else "key-shift",
+                    match_type="fallback",
                     query_used=chosen[4],
                 )
+            for p in pos_candidates[1:]:
+                pool = strict_related_pools.get(p, [])
+                if pool:
+                    key_shift_pools[p].extend(pool)
 
             for follow in build_followup_queries(
                 topic, seed_title, seed_creator
@@ -1350,6 +1395,36 @@ def pick_video_for_char(
                             query_pages[q] = 1
                             query_result_targets[q] = results_per_search
                             pending_queries.append(q)
+
+    if allow_key_shift:
+        for p in pos_candidates[1:]:
+            pool = key_shift_pools.get(p, [])
+            if not pool:
+                continue
+            chosen = random.choice(pool)
+            progress_log(
+                show_progress,
+                f"{step_label}No base-position match found. Using key shift to position {p}.",
+            )
+            info_log(
+                show_progress,
+                f"{step_label}All fallback searches were exhausted; applying key shift for {ch!r}.",
+            )
+            debug_log(
+                debug,
+                f"{step_label}No exact base-position match found after exhausting fallbacks. "
+                f"Applying key-shift from {base_pos} to {p} using {chosen[1]!r}.",
+            )
+            return PickedVideo(
+                video_id=chosen[0],
+                title=chosen[1],
+                creator=chosen[2],
+                intended_char=ch,
+                key_pos=chosen[5],
+                extracted_char=chosen[3],
+                match_type="key-shift",
+                query_used=chosen[4],
+            )
 
     debug_log(
         debug,
@@ -1390,10 +1465,11 @@ def encode(
     debug: int = 0,
     results_per_search: int = DEFAULT_RESULTS_PER_SEARCH,
     show_progress: bool = False,
-) -> Tuple[List[PickedVideo], List[int]]:
+) -> Tuple[List[PickedVideo], List[int], List[int]]:
     validate_message_for_technique(message, technique)
     normalized = normalize_message(message)
     positions = parse_key_to_positions(key)
+    active_key_positions = list(positions)
     debug_log(
         debug,
         f"encode start: original={message!r} normalized={normalized!r} "
@@ -1405,9 +1481,9 @@ def encode(
     used_video_ids_by_char: Dict[str, Set[str]] = {}
     used_video_ids_global: Set[str] = set()
     effective_positions: List[int] = []
-
     for i, ch in enumerate(normalized):
-        pos = positions[i % len(positions)]
+        slot = i % len(active_key_positions)
+        pos = active_key_positions[slot]
         step_label = f"[{i+1}/{len(normalized)}] "
         progress_log(
             show_progress,
@@ -1428,6 +1504,7 @@ def encode(
                 used_video_ids_global=used_video_ids_global,
                 results_per_search=results_per_search,
                 show_progress=show_progress,
+                allow_key_shift=True,
             )
         except ValueError as err:
             raise ValueError(
@@ -1435,6 +1512,8 @@ def encode(
             ) from err
         picked.append(video)
         effective_positions.append(video.key_pos)
+        if video.match_type == "key-shift":
+            active_key_positions[slot] = video.key_pos
         used_video_ids_by_char.setdefault(ch, set()).add(video.video_id)
         used_video_ids_global.add(video.video_id)
         progress_add_indexed(1)
@@ -1443,7 +1522,7 @@ def encode(
             f"{i+1}/{len(normalized)} matched at position {video.key_pos} -> {video.title!r}",
         )
     debug_log(debug, f"encode complete: picked={len(picked)}")
-    return picked, effective_positions
+    return picked, effective_positions, active_key_positions
 
 
 def decode(values: List[str], key: str) -> str:
@@ -1490,6 +1569,7 @@ def print_encode_summary(
     opsec_level: int,
     original_key: str,
     effective_key_full: str,
+    effective_key_mode: str,
     playlist_name: Optional[str],
     playlist_id: Optional[str],
     no_api_search: bool,
@@ -1516,6 +1596,9 @@ def print_encode_summary(
     print(f"Results/Search: ~{results_per_search} (jitter {int(SEARCH_RESULT_JITTER*100)}%)")
     print(f"Original Key: {original_key}")
     print(f"Effective Key: {effective_key_full}")
+    print(f"Effective Key Mode: {effective_key_mode}")
+    if effective_key_mode == "per-character":
+        print("Key Shift: adaptive stream (use full Effective Key exactly as printed)")
     if effective_key_full != original_key:
         print("Key Shift: enabled (use Effective Key to decode)")
     print(f"Videos: {len(videos)}")
@@ -1707,7 +1790,7 @@ def main() -> int:
                 opsec.simulate_noise(encode_client, args.topic, args.technique)
             if opsec.level >= 2:
                 opsec.simulate_human_browsing(encode_client, args.topic)
-            videos, effective_positions = encode(
+            videos, effective_positions, effective_key_positions = encode(
                 encode_client,
                 args.message,
                 encode_key,
@@ -1797,6 +1880,7 @@ def main() -> int:
                             used_video_ids_global=used_global,
                             results_per_search=args.results_per_search,
                             show_progress=show_progress,
+                            allow_key_shift=False,
                         )
                         videos[idx] = replacement
                         info_log(
@@ -1819,11 +1903,16 @@ def main() -> int:
                 progress_log(show_progress, "Playlist write completed.")
                 info_log(True, "Playlist writing phase completed.")
 
-            final_positions = [v.key_pos for v in videos]
-            effective_key_used = positions_to_key(final_positions)
-            effective_key_full = merge_effective_positions_into_key(
-                encode_key, final_positions
-            )
+            per_char_effective_key = positions_to_key(effective_positions)
+            try:
+                loop_effective_key = merge_effective_positions_into_key(
+                    encode_key, effective_positions
+                )
+                effective_key_full = loop_effective_key
+                effective_key_mode = "looped"
+            except ValueError:
+                effective_key_full = per_char_effective_key
+                effective_key_mode = "per-character"
             info_log(True, "Final key reconciliation completed.")
             progress_done()
 
@@ -1836,6 +1925,7 @@ def main() -> int:
                 opsec_level=args.opsec,
                 original_key=encode_key,
                 effective_key_full=effective_key_full,
+                effective_key_mode=effective_key_mode,
                 playlist_name=args.playlist_name,
                 playlist_id=created_playlist_id,
                 no_api_search=args.no_api,
@@ -1899,7 +1989,7 @@ def main() -> int:
         progress_done()
         if verbosity >= 2:
             traceback.print_exc()
-        print(f"Input error: {err}")
+        print(format_encode_input_error(str(err)))
         return 2
     except FileNotFoundError as err:
         progress_done()
