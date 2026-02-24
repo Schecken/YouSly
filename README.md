@@ -7,8 +7,7 @@ It supports strict positional matching, adaptive key shifts (hex only), and eith
 Dunno, felt like it
 
 # Features
-## Encode & decode me
-ssages
+## Encode & decode messages
 - **Title**: Match characters against video titles
 - **Creator**: Match characters against channel/creator names
 - **Video ID**: Match characters against the 11-char YouTube video ID
