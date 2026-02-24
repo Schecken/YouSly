@@ -28,7 +28,6 @@ from models import PickedVideo
 from opsec.simulator import YouTubeOpSecSimulator
 
 SUPPORTED_CHARS = set(string.ascii_lowercase + string.digits + " ")
-YOUTUBE_API_KEY = "AIzaSyDF7j-RS5-UNGQuyjYaiYOhkZqnNXkx9cQ"
 YOUTUBE_OAUTH_CLIENT_SECRETS = "client_secret.json"
 YOUTUBE_OAUTH_TOKEN_FILE = "youtube_token.json"
 YOUTUBE_WRITE_SCOPES = ["https://www.googleapis.com/auth/youtube"]
@@ -687,11 +686,42 @@ def build_followup_queries(topic: Optional[str], seed_title: str, seed_creator: 
 
 
 class YouTubeClient:
-    def __init__(self, api_key: str):
-        self.api_key = api_key
-        self.service = build("youtube", "v3", developerKey=api_key)
+    def __init__(
+        self,
+        client_secrets_file: str = YOUTUBE_OAUTH_CLIENT_SECRETS,
+        token_file: str = YOUTUBE_OAUTH_TOKEN_FILE,
+        debug: int = 0,
+    ):
+        self.client_secrets_file = client_secrets_file
+        self.token_file = token_file
+        self.debug = debug
+        self.service = self._build_service()
         self.search_cache: dict[tuple[str, int, int], List[dict]] = {}
         self.related_cache: dict[tuple[str, int], List[dict]] = {}
+
+    def _build_service(self):
+        creds = None
+        if os.path.exists(self.token_file):
+            creds = Credentials.from_authorized_user_file(
+                self.token_file, YOUTUBE_WRITE_SCOPES
+            )
+
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                if not os.path.exists(self.client_secrets_file):
+                    raise FileNotFoundError(
+                        f"OAuth client secrets file not found: {self.client_secrets_file}"
+                    )
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    self.client_secrets_file, YOUTUBE_WRITE_SCOPES
+                )
+                creds = flow.run_local_server(port=0)
+            with open(self.token_file, "w", encoding="utf-8") as f:
+                f.write(creds.to_json())
+
+        return build("youtube", "v3", credentials=creds)
 
     def search_videos(
         self,
@@ -1734,10 +1764,7 @@ def main() -> int:
     )
     yt = None
     if needs_api:
-        if not YOUTUBE_API_KEY or YOUTUBE_API_KEY == "REPLACE_WITH_YOUR_YOUTUBE_API_KEY":
-            print("Set YOUTUBE_API_KEY in yously.py before running.")
-            return 2
-        yt = YouTubeClient(YOUTUBE_API_KEY)
+        yt = YouTubeClient(debug=verbosity)
 
     try:
         if args.cmd == "encode":
